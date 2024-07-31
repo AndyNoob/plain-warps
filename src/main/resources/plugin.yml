@@ -1,0 +1,11 @@
+name: PlainWarps
+version: '${version}'
+main: comfortable_andy.plain_warps.PlainWarpsMain
+api-version: '1.21'
+permissions:
+  plain_warps.warps.*:
+    description: Allow the player to warp to any warp
+    default: op
+  plain_warps.warps.edit:
+    description: Allow editing of warps
+    default: op
