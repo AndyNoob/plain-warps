@@ -34,6 +34,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.text.DecimalFormat;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -208,7 +209,7 @@ public final class PlainWarpsMain extends JavaPlugin {
         }
 
         public Location getLocation() {
-            return new Location(Bukkit.getWorld(worldId), pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, rot.y, rot.x);
+            return new Location(Bukkit.getWorld(worldId), pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, rot.y, rot.x);
         }
 
         @Override
@@ -230,7 +231,8 @@ public final class PlainWarpsMain extends JavaPlugin {
         public String toString() {
             return "id='" + id + '\'' +
                     ", world=" + Bukkit.getWorld(worldId) +
-                    ", pos=" + pos;
+                    ", pos=" + pos +
+                    ", rot=" + rot.toString(new DecimalFormat("#.##"));
         }
     }
 
