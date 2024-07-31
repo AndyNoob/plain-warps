@@ -46,7 +46,7 @@ public class WarpsArgumentType implements CustomArgumentType.Converted<PlainWarp
                     && !s.getSender().hasPermission(warp.getPerm()))
                 continue;
             final Location loc = warp.getLocation();
-            builder.suggest(warp.id(), Component.literal("(")
+            builder.suggest(StringArgumentType.escapeIfRequired(warp.id()), Component.literal("(")
                     .append(loc.getWorld().getName())
                     .append(") ")
                     .append("" + loc.getX())
