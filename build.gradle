@@ -1,5 +1,7 @@
 plugins {
     id 'java'
+    id 'io.papermc.paperweight.userdev' version '1.7.1'
+    id 'xyz.jpenilla.run-paper' version '2.3.0'
 }
 
 group = 'comfortable_andy'
@@ -18,7 +20,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly 'io.papermc.paper:paper-api:1.21-R0.1-SNAPSHOT'
+    paperweight.paperDevBundle('1.21-R0.1-SNAPSHOT')
     compileOnly 'org.projectlombok:lombok:1.18.34'
     annotationProcessor 'org.projectlombok:lombok:1.18.34'
 }
@@ -48,4 +50,8 @@ processResources {
     filesMatching('plugin.yml') {
         expand props
     }
+}
+
+runServer {
+    jvmArgs("-Xms1G", "-Xmx1G")
 }
