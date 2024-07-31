@@ -123,9 +123,12 @@ public final class PlainWarpsMain extends JavaPlugin {
             }
             if (position == null)
                 throw new SimpleCommandExceptionType(Component.literal("You need a position!")).create();
+            final Location location = position.toLocation(s.getSource().getLocation().getWorld());
+            location.setPitch(rot.x);
+            location.setYaw(rot.y);
             final Warp warp = new Warp(
                     s.getArgument("id", String.class),
-                    position.toLocation(s.getSource().getLocation().getWorld())
+                    location
             );
             if (warps.add(warp))
                 sender.sendMessage("Done! (" + warp + ")");
