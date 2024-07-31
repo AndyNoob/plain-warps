@@ -152,7 +152,18 @@ public final class PlainWarpsMain extends JavaPlugin {
                                 )
                         )
                 )
-                .then(Commands.literal("remove"));
+                .then(Commands.literal("remove")
+                        .then(Commands
+                                .argument("warp", new WarpsArgumentType(this))
+                                .executes(s -> {
+                                    Warp warp = s.getArgument("warp", Warp.class);
+                                    if (warps.removeIf(w -> w.id.equals(warp.id))) {
+                                        s.getSource().getSender().sendMessage("Done!");
+                                        return Command.SINGLE_SUCCESS;
+                                    } else throw new SimpleCommandExceptionType(Component.literal("Could not remove warp.")).create();
+                                })
+                        )
+                );
         commands.register(playerRoot.build());
         commands.register(adminRoot.build());
     }
