@@ -3,6 +3,8 @@ package comfortable_andy.plain_warps.argument;
 import com.mojang.brigadier.arguments.ArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import comfortable_andy.plain_warps.PlainWarpsMain;
@@ -22,8 +24,12 @@ public class WarpsArgumentType implements CustomArgumentType.Converted<PlainWarp
     private final PlainWarpsMain main;
 
     @Override
-    public @NotNull PlainWarpsMain.Warp convert(@NotNull String nativeType) {
-        return main.getWarp(nativeType);
+    public @NotNull PlainWarpsMain.Warp convert(@NotNull String nativeType) throws CommandSyntaxException {
+        PlainWarpsMain.Warp warp = main.getWarp(nativeType);
+        if (warp == null) {
+            throw new SimpleCommandExceptionType(Component.literal("Could not find warp!")).create();
+        }
+        return warp;
     }
 
     @Override
