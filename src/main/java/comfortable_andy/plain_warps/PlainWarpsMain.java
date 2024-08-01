@@ -9,13 +9,15 @@ import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import comfortable_andy.plain_warps.argument.WarpsArgumentType;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
+import io.papermc.paper.command.brigadier.PaperCommandSourceStack;
 import io.papermc.paper.command.brigadier.argument.ArgumentTypes;
 import io.papermc.paper.command.brigadier.argument.resolvers.BlockPositionResolver;
 import io.papermc.paper.math.BlockPosition;
 import io.papermc.paper.plugin.lifecycle.event.registrar.ReloadableRegistrarEvent;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import lombok.Getter;
-import net.minecraft.commands.arguments.coordinates.Vec2Argument;
+import net.minecraft.commands.arguments.coordinates.Coordinates;
+import net.minecraft.commands.arguments.coordinates.RotationArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.phys.Vec2;
 import org.bukkit.Bukkit;
@@ -114,8 +116,9 @@ public final class PlainWarpsMain extends JavaPlugin {
             }
             Vector2f rot = new Vector2f();
             try {
-                Vec2 vec2 = s.getArgument("rot", Vec2.class);
-                rot.set(vec2.x, vec2.y);
+                Coordinates coordinates = s.getArgument("rot", Coordinates.class);
+                Vec2 rotation = coordinates.getRotation(((PaperCommandSourceStack) s.getSource()).getHandle());
+                rot.set(rotation.x, rotation.y);
             } catch (Exception e) {
                 if (sender instanceof Player player) {
                     rot.set(player.getPitch(), player.getYaw());
@@ -145,7 +148,7 @@ public final class PlainWarpsMain extends JavaPlugin {
                                 .then(Commands
                                         .argument("pos", ArgumentTypes.blockPosition())
                                         .then(Commands
-                                                .argument("rot", Vec2Argument.vec2())
+                                                .argument("rot", RotationArgument.rotation())
                                                 .executes(addWarp)
                                         )
                                         .executes(addWarp)
@@ -219,7 +222,7 @@ public final class PlainWarpsMain extends JavaPlugin {
         }
 
         public String getPerm() {
-            return "plain_warps.warps." + id;
+            return "plain_warps.warp." + id;
         }
 
         public Location getLocation() {

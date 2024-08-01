@@ -3,7 +3,7 @@ version: '${version}'
 main: comfortable_andy.plain_warps.PlainWarpsMain
 api-version: '1.21'
 permissions:
-  plain_warps.warps.*:
+  plain_warps.warp.*:
     description: Allow the player to warp to any warp
     default: op
   plain_warps.warps.command:
