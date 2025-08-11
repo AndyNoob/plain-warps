@@ -82,7 +82,7 @@ public final class PlainWarpsMain extends JavaPlugin {
         final Command<CommandSourceStack> teleport = s -> {
             final Warp warp = s.getArgument("warp", Warp.class);
             final CommandSender sender = s.getSource().getSender();
-            if (!sender.hasPermission("plain_warps.warps.*") && !sender.hasPermission(warp.getPerm())) {
+            if (!sender.hasPermission("plain_warps.warp.*") && !sender.hasPermission(warp.getPerm())) {
                 throw new SimpleCommandExceptionType(Component.literal("You can't teleport there!")).create();
             }
             final Player target;
@@ -95,7 +95,7 @@ public final class PlainWarpsMain extends JavaPlugin {
         };
         final var playerRoot = Commands
                 .literal("warp")
-                .requires(s -> s.getSender().hasPermission("plain_warps.warps.command"))
+                .requires(s -> s.getSender().hasPermission("plain_warps.warp.command"))
                 .then(Commands
                         .argument("warp", new WarpsArgumentType(this))
                         .then(Commands
@@ -140,6 +140,7 @@ public final class PlainWarpsMain extends JavaPlugin {
         };
         final var adminRoot = Commands
                 .literal("warps")
+                .requires(s -> s.getSender().hasPermission("plain_warps.warps.edit"))
                 .then(Commands
                         .literal("add")
                         .then(Commands

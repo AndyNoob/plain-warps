@@ -6,7 +6,7 @@ permissions:
   plain_warps.warp.*:
     description: Allow the player to warp to any warp
     default: op
-  plain_warps.warps.command:
+  plain_warps.warp.command:
     description: Allow the player to see the command
     default: true
   plain_warps.warps.edit:
