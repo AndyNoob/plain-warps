@@ -13,6 +13,7 @@ import io.papermc.paper.command.brigadier.PaperCommandSourceStack;
 import io.papermc.paper.command.brigadier.argument.ArgumentTypes;
 import io.papermc.paper.command.brigadier.argument.resolvers.BlockPositionResolver;
 import io.papermc.paper.math.BlockPosition;
+import io.papermc.paper.command.brigadier.argument.resolvers.FinePositionResolver;
 import io.papermc.paper.plugin.lifecycle.event.registrar.ReloadableRegistrarEvent;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import lombok.Getter;
@@ -106,12 +107,12 @@ public final class PlainWarpsMain extends JavaPlugin {
 
         final Command<CommandSourceStack> addWarp = s -> {
             final CommandSender sender = s.getSource().getSender();
-            BlockPosition position = null;
+            FinePosition position = null;
             try {
-                position = s.getArgument("pos", BlockPositionResolver.class).resolve(s.getSource());
+                position = s.getArgument("pos", FinePositionResolver.class).resolve(s.getSource());
             } catch (Exception e) {
                 if (sender instanceof Player player) {
-                    position = player.getLocation().toBlock();
+                    position = player.getLocation();
                 }
             }
             Vector2f rot = new Vector2f();
@@ -147,7 +148,7 @@ public final class PlainWarpsMain extends JavaPlugin {
                                 .argument("id", StringArgumentType.string())
                                 .executes(addWarp)
                                 .then(Commands
-                                        .argument("pos", ArgumentTypes.blockPosition())
+                                        .argument("pos", ArgumentTypes.finePosition())
                                         .then(Commands
                                                 .argument("rot", RotationArgument.rotation())
                                                 .executes(addWarp)
