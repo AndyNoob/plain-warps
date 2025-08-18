@@ -2,6 +2,7 @@ plugins {
     id 'java'
     id 'io.papermc.paperweight.userdev' version '2.0.0-beta.18'
     id 'xyz.jpenilla.run-paper' version '2.3.1'
+    id 'com.gradleup.shadow' version '9.0.1'
 }
 
 group = 'comfortable_andy'
@@ -23,6 +24,8 @@ dependencies {
     paperweight.paperDevBundle('1.21.5-R0.1-SNAPSHOT')
     compileOnly 'org.projectlombok:lombok:1.18.34'
     annotationProcessor 'org.projectlombok:lombok:1.18.34'
+    implementation 'org.danilopianini:gson-extras:3.3.0'
+    compileOnly 'net.dmulloy2:ProtocolLib:5.4.0'
 }
 
 def targetJavaVersion = 21
@@ -54,4 +57,13 @@ processResources {
 
 runServer {
     jvmArgs("-Xms1G", "-Xmx1G")
+    downloadPlugins {
+        github("dmulloy2", "ProtocolLib", "dev-build", "ProtocolLib.jar")
+    }
+}
+
+shadowJar {
+    minimize()
+    archiveClassifier.set('')
+    project.tasks.assemble.dependsOn project.tasks.shadowJar
 }

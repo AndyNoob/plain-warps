@@ -8,6 +8,7 @@ import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import comfortable_andy.plain_warps.PlainWarpsMain;
+import comfortable_andy.plain_warps.warp.Warp;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.argument.CustomArgumentType;
 import lombok.RequiredArgsConstructor;
@@ -19,13 +20,13 @@ import java.util.concurrent.CompletableFuture;
 
 @SuppressWarnings("UnstableApiUsage")
 @RequiredArgsConstructor
-public class WarpsArgumentType implements CustomArgumentType.Converted<PlainWarpsMain.Warp, String> {
+public class WarpsArgumentType implements CustomArgumentType.Converted<Warp, String> {
 
     private final PlainWarpsMain main;
 
     @Override
-    public @NotNull PlainWarpsMain.Warp convert(@NotNull String nativeType) throws CommandSyntaxException {
-        PlainWarpsMain.Warp warp = main.getWarp(nativeType);
+    public @NotNull Warp convert(@NotNull String nativeType) throws CommandSyntaxException {
+        Warp warp = main.getWarp(nativeType);
         if (warp == null) {
             throw new SimpleCommandExceptionType(Component.literal("Could not find warp!")).create();
         }
@@ -39,8 +40,8 @@ public class WarpsArgumentType implements CustomArgumentType.Converted<PlainWarp
 
     @Override
     public @NotNull <S> CompletableFuture<Suggestions> listSuggestions(@NotNull CommandContext<S> context, @NotNull SuggestionsBuilder builder) {
-        final boolean canSeeAll = context.getSource() instanceof CommandSourceStack s && s.getSender().hasPermission("plain_warps.warps.*");
-        for (PlainWarpsMain.Warp warp : main.getWarps()) {
+        final boolean canSeeAll = context.getSource() instanceof CommandSourceStack s && s.getSender().hasPermission("plain_warps.warp.*");
+        for (Warp warp : main.getWarps()) {
             if (!canSeeAll
                     && context.getSource() instanceof CommandSourceStack s
                     && !s.getSender().hasPermission(warp.getPerm()))
