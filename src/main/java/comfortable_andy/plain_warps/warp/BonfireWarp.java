@@ -20,12 +20,14 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.Transformation;
 import org.bukkit.util.Vector;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Math;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 import java.lang.reflect.Field;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -63,6 +65,13 @@ public final class BonfireWarp extends PlainWarp {
                 0.35,
                 ThreadLocalRandom.current().nextDouble(-0.15, 0.15)
         );
+    }
+
+    @Override
+    public boolean togglePersistentLockState(Player player) {
+        boolean locked = super.togglePersistentLockState(player);
+        showLockState(player, isLockedFor(player));
+        return locked;
     }
 
     public void spawn() {
@@ -142,7 +151,7 @@ public final class BonfireWarp extends PlainWarp {
             boolean lit = true;
             updateCampfireLit(player, lit);
         }, 17);
-        drawLine(swordDisplay.getLocation(), swordDir);
+//        drawLine(swordDisplay.getLocation(), swordDir);
     }
 
     private void updateCampfireLit(Player player, boolean lit) {
@@ -156,6 +165,7 @@ public final class BonfireWarp extends PlainWarp {
         MANAGER.sendServerPacket(player, setLitFire);
     }
 
+    @SuppressWarnings("unused")
     private void drawLine(Location start, Vector dir) {
         for (double i = 0; i < 10 /* 10 is the length of the line */; i += 0.5 /* 0.5 is the gap between each particle */) {
             Location cur = start.clone().add(dir.clone().multiply(i));
@@ -164,7 +174,8 @@ public final class BonfireWarp extends PlainWarp {
         }
     }
 
-    public void overrideLockState(Player player, boolean toLock) {
+    public void showLockState(Player player, boolean toLock) {
+        System.out.println(toLock);
         if (swordDisplay == null)
             spawn();
         if (toLock) {
@@ -206,4 +217,16 @@ public final class BonfireWarp extends PlainWarp {
                 .setDirection(swordDir));
 //        i.setVisibleByDefault(false);
     }
+
+    @Contract("null -> null")
+    public static @Nullable BonfireWarp findWarp(@Nullable BlockDisplay campfireDisplay) {
+        if (campfireDisplay == null) return null;
+        return (BonfireWarp) PlainWarpsMain.getInstance().getWarps()
+                .stream()
+                .filter(w -> w instanceof BonfireWarp warp
+                        && Objects.equals(warp.campfireId, campfireDisplay.getUniqueId()))
+                .findFirst()
+                .orElse(null);
+    }
+
 }

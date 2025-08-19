@@ -9,6 +9,7 @@ import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import comfortable_andy.plain_warps.argument.WarpsArgumentType;
+import comfortable_andy.plain_warps.listener.BonfireLoadListener;
 import comfortable_andy.plain_warps.warp.BonfireWarp;
 import comfortable_andy.plain_warps.warp.PlainWarp;
 import comfortable_andy.plain_warps.warp.Warp;
@@ -99,6 +100,7 @@ public final class PlainWarpsMain extends JavaPlugin {
                 }
             }
         }.runTaskTimer(this, 0, 20 * 15);
+        getServer().getPluginManager().registerEvents(new BonfireLoadListener(), this);
     }
 
     private void registerCommands(@NotNull ReloadableRegistrarEvent<@NotNull Commands> event) {
@@ -106,7 +108,7 @@ public final class PlainWarpsMain extends JavaPlugin {
         final Command<CommandSourceStack> teleport = s -> {
             final Warp warp = s.getArgument("warp", Warp.class);
             final CommandSender sender = s.getSource().getSender();
-            if (!sender.hasPermission("plain_warps.warp.*") && !sender.hasPermission(warp.getPerm())) {
+            if (warp.isLockedFor(sender)) {
                 throw new SimpleCommandExceptionType(Component.literal("You can't teleport there!")).create();
             }
             final Player target;
@@ -170,6 +172,99 @@ public final class PlainWarpsMain extends JavaPlugin {
                 throw new SimpleCommandExceptionType(Component.literal("A warp with id '" + warp.id() + "' already exists!")).create();
             return Command.SINGLE_SUCCESS;
         };
+        var testSubCommand = Commands
+                .literal("test")
+                .requires(c -> c.getSender().isOp())
+                .then(Commands
+                        .argument("warp", new WarpsArgumentType(this))
+                        .executes(c -> {
+                            if (!(c.getSource().getSender() instanceof Player player)) {
+                                throw new SimpleCommandExceptionType(Component.literal("You need to be a player.")).create();
+                            }
+                            if (!(c.getArgument("warp", Warp.class) instanceof BonfireWarp warp)) {
+                                throw new SimpleCommandExceptionType(Component.literal("You need to specify a bonfire warp.")).create();
+                            }
+                            warp.playAndShowUnlock(player);
+                            Bukkit.getScheduler().runTaskLater(
+                                    this,
+                                    () -> warp.showLockState(player, true),
+                                    20 * 3
+                            );
+                            return 1;
+                        })
+                )
+                .executes(c -> {
+                    if (!(c.getSource().getSender() instanceof Player player)) {
+                        throw new SimpleCommandExceptionType(Component.literal("You need to be a player.")).create();
+                    }
+                    Location location = player.getLocation()
+                            .toBlockLocation()
+                            .add(player.getFacing().getDirection().multiply(5))
+                            .setRotation(0, 0);
+                    BlockDisplay campfire = player.getWorld().spawn(location, BlockDisplay.class, b -> {
+                        Campfire data = (Campfire) Material.SOUL_CAMPFIRE.createBlockData();
+                        data.setLit(false);
+                        b.setBlock(data);
+                    });
+                    Vector directionOfSword = new Vector(0, 1, 0)
+                            .rotateAroundX(Math.toRadians(-15))
+                            .rotateAroundY(Math.toRadians(15));
+                    ItemDisplay sword = player.getWorld().spawn(location.clone().add(.5, 0.2, 0).add(directionOfSword), ItemDisplay.class, i -> {
+                        i.setItemStack(new ItemStack(Material.GOLDEN_SWORD));
+                        i.setTeleportDuration(18);
+                        Bukkit.getScheduler().runTaskLater(this, () ->
+                        {
+                            i.teleport(i.getLocation().subtract(directionOfSword.clone().multiply(0.75)));
+                            Bukkit.getScheduler().runTaskLater(this, () -> {
+                                Campfire fireData = (Campfire) campfire.getBlock();
+                                fireData.setLit(true);
+                                campfire.setBlock(fireData);
+                            }, i.getTeleportDuration());
+                        }, 8);
+                        i.setTransformation(new Transformation(
+                                new Vector3f(),
+                                new Quaternionf(),
+                                new Vector3f(1, 1, 1),
+                                new Quaternionf().rotateXYZ(
+                                        Math.toRadians(90),
+                                        Math.toRadians(0),
+                                        Math.toRadians(135)
+                                )
+                        ));
+                        i.teleport(i.getLocation().setDirection(directionOfSword));
+                    });
+                    Bukkit.getScheduler().runTaskLater(this, () -> {
+                        campfire.remove();
+                        sword.remove();
+                    }, 20 * 5);
+                    return 1;
+                });
+
+        var unlockExecute = (Command<CommandSourceStack>) s -> {
+            Player target = null;
+            try {
+                target = s.getArgument("target", Player.class);
+            } catch (Exception ignored) {
+            }
+            if (!(s.getSource().getSender() instanceof Player) && target == null) {
+                throw new SimpleCommandExceptionType(Component.literal("Please specify a target")).create();
+            }
+            if (target == null) target = (Player) s.getSource().getSender();
+            Warp warp = s.getArgument("warp", Warp.class);
+            boolean toggledOn = warp.togglePersistentLockState(target);
+            boolean lockedFor = warp.isLockedFor(target);
+            String state = toggledOn ? "locked" : "unlocked";
+            if (lockedFor != toggledOn) {
+                s.getSource().getSender().sendMessage("Toggled warp '" + warp.id() + "', however, the target has permission override for the warp!");
+            } else {
+                if (target != s.getSource().getSender())
+                    s.getSource()
+                            .getSender()
+                            .sendMessage("Warp '" + warp.id() + "' is now " + state + " for " + target.getName() + "!");
+                target.sendMessage("Warp '" + warp.id() + "' is now " + state + "!");
+            }
+            return 1;
+        };
         final var adminRoot = Commands
                 .literal("warps")
                 .requires(s -> s.getSender().hasPermission("plain_warps.warps.edit"))
@@ -209,72 +304,17 @@ public final class PlainWarpsMain extends JavaPlugin {
                                 })
                         )
                 )
-                .then(Commands
-                        .literal("test")
-                        .requires(c -> c.getSender().isOp())
+                .then(Commands.literal("toggle")
                         .then(Commands
                                 .argument("warp", new WarpsArgumentType(this))
-                                .executes(c -> {
-                                    if (!(c.getSource().getSender() instanceof Player player)) {
-                                        throw new SimpleCommandExceptionType(Component.literal("You need to be a player.")).create();
-                                    }
-                                    if (!(c.getArgument("warp", Warp.class) instanceof BonfireWarp warp)) {
-                                        throw new SimpleCommandExceptionType(Component.literal("You need to specify a bonfire warp.")).create();
-                                    }
-                                    warp.playAndShowUnlock(player);
-                                    Bukkit.getScheduler().runTaskLater(this, () -> {
-                                        warp.overrideLockState(player, true);
-                                    }, 20 * 3);
-                                    return 1;
-                                })
+                                .executes(unlockExecute)
+                                .then(Commands
+                                        .argument("target", ArgumentTypes.player())
+                                        .executes(unlockExecute)
+                                )
                         )
-                        .executes(c -> {
-                            if (!(c.getSource().getSender() instanceof Player player)) {
-                                throw new SimpleCommandExceptionType(Component.literal("You need to be a player.")).create();
-                            }
-                            Location location = player.getLocation()
-                                    .toBlockLocation()
-                                    .add(player.getFacing().getDirection().multiply(5))
-                                    .setRotation(0, 0);
-                            BlockDisplay campfire = player.getWorld().spawn(location, BlockDisplay.class, b -> {
-                                Campfire data = (Campfire) Material.SOUL_CAMPFIRE.createBlockData();
-                                data.setLit(false);
-                                b.setBlock(data);
-                            });
-                            Vector directionOfSword = new Vector(0, 1, 0)
-                                    .rotateAroundX(Math.toRadians(-15))
-                                    .rotateAroundY(Math.toRadians(15));
-                            ItemDisplay sword = player.getWorld().spawn(location.clone().add(.5, 0.2, 0).add(directionOfSword), ItemDisplay.class, i -> {
-                                i.setItemStack(new ItemStack(Material.GOLDEN_SWORD));
-                                i.setTeleportDuration(18);
-                                Bukkit.getScheduler().runTaskLater(this, () ->
-                                {
-                                    i.teleport(i.getLocation().subtract(directionOfSword.clone().multiply(0.75)));
-                                    Bukkit.getScheduler().runTaskLater(this, () -> {
-                                        Campfire fireData = (Campfire) campfire.getBlock();
-                                        fireData.setLit(true);
-                                        campfire.setBlock(fireData);
-                                    }, i.getTeleportDuration());
-                                }, 8);
-                                i.setTransformation(new Transformation(
-                                        new Vector3f(),
-                                        new Quaternionf(),
-                                        new Vector3f(1, 1, 1),
-                                        new Quaternionf().rotateXYZ(
-                                                Math.toRadians(90),
-                                                Math.toRadians(0),
-                                                Math.toRadians(135)
-                                        )
-                                ));
-                                i.teleport(i.getLocation().setDirection(directionOfSword));
-                            });
-                            Bukkit.getScheduler().runTaskLater(this, () -> {
-                                campfire.remove();
-                                sword.remove();
-                            }, 20 * 5);
-                            return 1;
-                        })
-                );
+                )
+                .then(testSubCommand);
         commands.register(playerRoot.build());
         commands.register(adminRoot.build());
         Bukkit.getScheduler().runTaskTimerAsynchronously(this, this::saveWarps, 20 * 5, 20 * 60);

@@ -40,11 +40,10 @@ public class WarpsArgumentType implements CustomArgumentType.Converted<Warp, Str
 
     @Override
     public @NotNull <S> CompletableFuture<Suggestions> listSuggestions(@NotNull CommandContext<S> context, @NotNull SuggestionsBuilder builder) {
-        final boolean canSeeAll = context.getSource() instanceof CommandSourceStack s && s.getSender().hasPermission("plain_warps.warp.*");
+        if (!(context.getSource() instanceof CommandSourceStack s)) return builder.buildFuture();
+        final boolean canSeeAll = s.getSender().hasPermission("plain_warps.warp.*");
         for (Warp warp : main.getWarps()) {
-            if (!canSeeAll
-                    && context.getSource() instanceof CommandSourceStack s
-                    && !s.getSender().hasPermission(warp.getPerm()))
+            if (!canSeeAll && warp.isLockedFor(s.getSender()))
                 continue;
             final Location loc = warp.getLocation();
             builder.suggest(StringArgumentType.escapeIfRequired(warp.id()), Component.literal("(")
