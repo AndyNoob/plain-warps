@@ -10,36 +10,45 @@ import com.comphenix.protocol.wrappers.WrappedDataWatcher;
 import comfortable_andy.plain_warps.PlainWarpsMain;
 import lombok.Getter;
 import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.util.Brightness;
 import net.minecraft.world.entity.Display;
 import org.bukkit.*;
 import org.bukkit.block.data.type.Campfire;
-import org.bukkit.entity.BlockDisplay;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.ItemDisplay;
-import org.bukkit.entity.Player;
+import org.bukkit.entity.*;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.Transformation;
 import org.bukkit.util.Vector;
 import org.jetbrains.annotations.Contract;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Math;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Type;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Function;
 
 public final class BonfireWarp extends PlainWarp {
 
     private static final Integer BLOCK_STATE_ID;
+    private static final Integer BRIGHTNESS_ID;
+    private static final Integer SCALE_ID;
 
     static {
         try {
             Field stateId = Display.BlockDisplay.class.getDeclaredField("DATA_BLOCK_STATE_ID");
             stateId.trySetAccessible();
             BLOCK_STATE_ID = ((EntityDataAccessor<?>) stateId.get(null)).id();
+            Field brightnessField = Display.class.getDeclaredField("DATA_BRIGHTNESS_OVERRIDE_ID");
+            brightnessField.trySetAccessible();
+            BRIGHTNESS_ID = ((EntityDataAccessor<?>) brightnessField.get(null)).id();
+            Field sacleField = Display.class.getDeclaredField("DATA_SCALE_ID");
+            sacleField.trySetAccessible();
+            SCALE_ID = ((EntityDataAccessor<?>) sacleField.get(null)).id();
         } catch (ReflectiveOperationException e) {
             throw new RuntimeException(e);
         }
@@ -51,8 +60,10 @@ public final class BonfireWarp extends PlainWarp {
     public final Vector swordOffset;
     public @Nullable UUID campfireId = null;
     public @Nullable UUID swordDisplayId = null;
+    public @Nullable UUID interactionId = null;
     private @Getter transient ItemDisplay swordDisplay;
     private @Getter transient BlockDisplay campfireDisplay;
+    private @Getter transient Interaction interaction;
 
     public BonfireWarp(String id, Location location, Vector bonfirePosition) {
         super(id, location);
@@ -84,7 +95,7 @@ public final class BonfireWarp extends PlainWarp {
             }
             if (campfireDisplay == null) {
                 campfireDisplay = world.spawn(location, BlockDisplay.class, b -> setupBlockDisplay(world, b));
-            }
+            } else setupBlockDisplay(world, campfireDisplay);
         } else setupBlockDisplay(world, campfireDisplay);
         campfireId = campfireDisplay.getUniqueId();
 
@@ -99,9 +110,20 @@ public final class BonfireWarp extends PlainWarp {
                         ItemDisplay.class,
                         i -> setupItemDisplay(world, i)
                 );
-            }
+            } else setupItemDisplay(world, swordDisplay);
         } else setupItemDisplay(world, swordDisplay);
         swordDisplayId = swordDisplay.getUniqueId();
+
+        if (interaction == null) {
+            if (interactionId != null) {
+                Entity entity = Bukkit.getEntity(interactionId);
+                if (entity instanceof Interaction i) interaction = i;
+            }
+            if (interaction == null) {
+                interaction = world.spawn(location, Interaction.class, i -> setupInteraction(world, i));
+            } else setupInteraction(world, interaction);
+        } else setupInteraction(world, interaction);
+        interactionId = interaction.getUniqueId();
     }
 
     public void remove() {
@@ -116,42 +138,51 @@ public final class BonfireWarp extends PlainWarp {
     }
 
     public void playAndShowUnlock(Player player) {
+        if (!isLockedFor(player)) return;
         if (swordDisplay == null)
             spawn();
 
         player.showEntity(PlainWarpsMain.getInstance(), swordDisplay);
-
-        PacketContainer teleportSword = MANAGER.createPacket(PacketType.Play.Server.ENTITY_TELEPORT);
-        teleportSword.getIntegers().write(0, swordDisplay.getEntityId());
-        var pos = swordDisplay.getLocation().add(swordDir.clone().multiply(3));
-        InternalStructure positionMoveRotation = teleportSword.getStructures().read(0);
-        positionMoveRotation.getVectors()
-                .write(0, pos.toVector())
-                .write(1, new Vector());
-        positionMoveRotation.getFloat()
-                .write(0, pos.getYaw())
-                .write(1, pos.getPitch());
-        MANAGER.sendServerPacket(player, teleportSword);
+        MANAGER.sendServerPacket(
+                player,
+                createSwordTpPacket(swordDisplay.getLocation()
+                        .add(swordDir.clone().multiply(3))
+                )
+        );
 
         {
             PacketContainer setTpDuration = MANAGER.createPacket(PacketType.Play.Server.ENTITY_METADATA);
             setTpDuration.getIntegers().write(0, swordDisplay.getEntityId());
             WrappedDataWatcher watcher = new WrappedDataWatcher(swordDisplay);
-            watcher.setInteger(Display.DATA_POS_ROT_INTERPOLATION_DURATION_ID.id(), 18, true);
+            watcher.setInteger(
+                    Display.DATA_POS_ROT_INTERPOLATION_DURATION_ID.id(),
+                    18,
+                    true
+            );
+            watcher.setObject(
+                    SCALE_ID,
+                    WrappedDataWatcher.Registry.get((Type) Vector3f.class),
+                    new Vector3f(1, 1, 1),
+                    true
+            );
             setTpDuration.getDataValueCollectionModifier().write(0, watcher.toDataValueCollection());
             MANAGER.sendServerPacket(player, setTpDuration);
         }
 
-        PlainWarpsMain.runLater(() -> {
-            positionMoveRotation.getVectors().write(0,swordDisplay.getLocation().toVector());
-            MANAGER.sendServerPacket(player, teleportSword);
-        }, 1);
-
-        PlainWarpsMain.runLater(() -> {
-            boolean lit = true;
-            updateCampfireLit(player, lit);
-        }, 17);
-//        drawLine(swordDisplay.getLocation(), swordDir);
+        PlainWarpsMain.runLater(
+                () -> {
+                    MANAGER.sendServerPacket(
+                            player,
+                            createSwordTpPacket(swordDisplay.getLocation())
+                    );
+                    PlainWarpsMain.runLater(() -> {
+                        boolean lit = true;
+                        updateCampfireLit(player, lit);
+                        togglePersistentLockState(player);
+                    }, 17);
+                },
+                player.getPing() / 50 + 10
+        );
     }
 
     private void updateCampfireLit(Player player, boolean lit) {
@@ -161,6 +192,7 @@ public final class BonfireWarp extends PlainWarp {
         Campfire campfireData = (Campfire) campfireDisplay.getBlock().clone();
         campfireData.setLit(lit);
         watcher.setBlockState(BLOCK_STATE_ID, WrappedBlockData.createData(campfireData), true);
+        watcher.setInteger(BRIGHTNESS_ID, lit ? Brightness.pack(15, 15) : -1, true);
         setLitFire.getDataValueCollectionModifier().write(0, watcher.toDataValueCollection());
         MANAGER.sendServerPacket(player, setLitFire);
     }
@@ -175,20 +207,54 @@ public final class BonfireWarp extends PlainWarp {
     }
 
     public void showLockState(Player player, boolean toLock) {
-        System.out.println(toLock);
-        if (swordDisplay == null)
+        if (swordDisplay == null) {
             spawn();
+            PlainWarpsMain.runLater(() -> showLockState0(player, toLock), 1);
+        } else showLockState0(player, toLock);
+    }
+
+    private void showLockState0(Player player, boolean toLock) {
         if (toLock) {
             player.hideEntity(PlainWarpsMain.getInstance(), swordDisplay);
         } else {
             player.showEntity(PlainWarpsMain.getInstance(), swordDisplay);
+            resetSwordScale(player);
         }
         updateCampfireLit(player, !toLock);
+    }
+
+    private void resetSwordScale(Player player) {
+        PacketContainer packet = MANAGER.createPacket(PacketType.Play.Server.ENTITY_METADATA);
+        packet.getIntegers().write(0, swordDisplay.getEntityId());
+        WrappedDataWatcher watcher = new WrappedDataWatcher(swordDisplay);
+        watcher.setObject(SCALE_ID, WrappedDataWatcher.Registry.get((Type) Vector3f.class),new Vector3f(1, 1, 1), true);
+        packet.getDataValueCollectionModifier().write(0, watcher.toDataValueCollection());
+        MANAGER.sendServerPacket(player, packet);
+    }
+
+    private PacketContainer createSwordTpPacket(Location pos) {
+        PacketContainer packet = MANAGER.createPacket(PacketType.Play.Server.ENTITY_TELEPORT);
+        packet.getIntegers().write(0, swordDisplay.getEntityId());
+        InternalStructure positionMoveRotation = packet.getStructures().read(0);
+        positionMoveRotation.getVectors()
+                .write(0, pos.toVector())
+                .write(1, new Vector());
+        positionMoveRotation.getFloat()
+                .write(0, pos.getYaw())
+                .write(1, pos.getPitch());
+        return packet;
     }
 
     @Override
     public String toString() {
         return "bonfire " + super.toString();
+    }
+
+    private void setupInteraction(World world, Interaction i) {
+        i.setInteractionHeight(0.6f);
+        i.setInteractionWidth(1);
+        i.setResponsive(true);
+        i.teleport(bonfirePosition.toLocation(world).add(0.5, 0, 0.5));
     }
 
     private void setupBlockDisplay(World world, BlockDisplay b) {
@@ -203,28 +269,35 @@ public final class BonfireWarp extends PlainWarp {
         i.setTransformation(new Transformation(
                 new Vector3f(),
                 new Quaternionf(),
-                new Vector3f(1, 1, 1),
+                new Vector3f(0),
                 new Quaternionf().rotateXYZ(
                         Math.toRadians(90),
                         Math.toRadians(0),
                         Math.toRadians(135)
                 )
         ));
+        i.setInterpolationDuration(0);
+        i.setInterpolationDelay(0);
+        i.setBrightness(new org.bukkit.entity.Display.Brightness(15, 15));
         i.teleport(bonfirePosition
                 .toLocation(world)
                 .add(0.5, 0, 0.5)
-                .add(swordOffset)
+                .add(swordOffset.clone().multiply(1))
                 .setDirection(swordDir));
-//        i.setVisibleByDefault(false);
+        i.setVisibleByDefault(false);
     }
 
-    @Contract("null -> null")
-    public static @Nullable BonfireWarp findWarp(@Nullable BlockDisplay campfireDisplay) {
-        if (campfireDisplay == null) return null;
+    @Contract("null, _ -> null")
+    public static @Nullable <T extends Entity> BonfireWarp findWarp(@Nullable T searchEntity, @NotNull Function<BonfireWarp, UUID> grabFromWarp) {
+        if (searchEntity == null) return null;
         return (BonfireWarp) PlainWarpsMain.getInstance().getWarps()
                 .stream()
-                .filter(w -> w instanceof BonfireWarp warp
-                        && Objects.equals(warp.campfireId, campfireDisplay.getUniqueId()))
+                .filter(w -> {
+                    if (!(w instanceof BonfireWarp warp)) return false;
+                    UUID id = grabFromWarp.apply(warp);
+                    if (id == null) return false;
+                    return Objects.equals(id, searchEntity.getUniqueId());
+                })
                 .findFirst()
                 .orElse(null);
     }
