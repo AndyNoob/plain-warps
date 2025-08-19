@@ -9,7 +9,7 @@ import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import comfortable_andy.plain_warps.argument.WarpsArgumentType;
-import comfortable_andy.plain_warps.listener.BonfireLoadListener;
+import comfortable_andy.plain_warps.listener.BonfireListener;
 import comfortable_andy.plain_warps.warp.BonfireWarp;
 import comfortable_andy.plain_warps.warp.PlainWarp;
 import comfortable_andy.plain_warps.warp.Warp;
@@ -19,6 +19,7 @@ import io.papermc.paper.command.brigadier.PaperCommandSourceStack;
 import io.papermc.paper.command.brigadier.argument.ArgumentTypes;
 import io.papermc.paper.command.brigadier.argument.resolvers.BlockPositionResolver;
 import io.papermc.paper.command.brigadier.argument.resolvers.FinePositionResolver;
+import io.papermc.paper.command.brigadier.argument.resolvers.selector.PlayerSelectorArgumentResolver;
 import io.papermc.paper.math.BlockPosition;
 import io.papermc.paper.math.FinePosition;
 import io.papermc.paper.plugin.lifecycle.event.registrar.ReloadableRegistrarEvent;
@@ -100,7 +101,7 @@ public final class PlainWarpsMain extends JavaPlugin {
                 }
             }
         }.runTaskTimer(this, 0, 20 * 15);
-        getServer().getPluginManager().registerEvents(new BonfireLoadListener(), this);
+        getServer().getPluginManager().registerEvents(new BonfireListener(), this);
     }
 
     private void registerCommands(@NotNull ReloadableRegistrarEvent<@NotNull Commands> event) {
@@ -243,7 +244,7 @@ public final class PlainWarpsMain extends JavaPlugin {
         var unlockExecute = (Command<CommandSourceStack>) s -> {
             Player target = null;
             try {
-                target = s.getArgument("target", Player.class);
+                target = s.getArgument("target", PlayerSelectorArgumentResolver.class).resolve(s.getSource()).getFirst();
             } catch (Exception ignored) {
             }
             if (!(s.getSource().getSender() instanceof Player) && target == null) {
