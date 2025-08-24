@@ -8,12 +8,14 @@ import com.google.gson.typeadapters.RuntimeTypeAdapterFactory;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import comfortable_andy.plain_warps.argument.WarpsArgumentType;
 import comfortable_andy.plain_warps.listener.BonfireListener;
 import comfortable_andy.plain_warps.warp.BonfireWarp;
 import comfortable_andy.plain_warps.warp.PlainWarp;
 import comfortable_andy.plain_warps.warp.Warp;
+import comfortable_andy.plain_warps.warp.WarpProperty;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.command.brigadier.PaperCommandSourceStack;
@@ -270,13 +272,7 @@ public final class PlainWarpsMain extends JavaPlugin {
         final var editExecute = (Command<CommandSourceStack>) s -> {
             Warp warp = s.getArgument("warp", Warp.class);
             String name = s.getArgument("property", String.class);
-            var property = warp.properties()
-                    .stream()
-                    .filter(p -> p.name().equals(name))
-                    .findFirst().orElse(null);
-            if (property == null) {
-                throw new SimpleCommandExceptionType(Component.literal("Property does not exist")).create();
-            }
+            var property = getWarpProperty(warp, name);
             boolean hasValue = s.getNodes().stream()
                     .anyMatch(n -> n.getNode().getName().equals("value"));
             if (!hasValue) {
@@ -325,13 +321,8 @@ public final class PlainWarpsMain extends JavaPlugin {
                                         .suggests((c, s) -> {
                                             Warp warp = c.getArgument("warp", Warp.class);
                                             String name = c.getArgument("property", String.class);
-                                            var property = warp.properties()
-                                                    .stream()
-                                                    .filter(p -> p.name().equals(name))
-                                                    .findFirst().orElse(null);
-                                            return property == null
-                                                    ? s.buildFuture()
-                                                    : property.commandArgType().listSuggestions(c, s);
+                                            var property = getWarpProperty(warp, name);
+                                            return property.commandArgType().listSuggestions(c, s);
                                         })
                                         .executes(editExecute)
                                 )
@@ -391,6 +382,16 @@ public final class PlainWarpsMain extends JavaPlugin {
         commands.register(playerRoot.build());
         commands.register(adminRoot.build());
         Bukkit.getScheduler().runTaskTimerAsynchronously(this, this::saveWarps, 20 * 5, 20 * 60);
+    }
+
+    private static @NotNull WarpProperty<?, ?, ?> getWarpProperty(Warp warp, String name) throws CommandSyntaxException {
+        var property = warp.properties()
+                .stream()
+                .filter(p -> p.name().equals(name))
+                .findFirst().orElse(null);
+        if (property == null)
+            throw new SimpleCommandExceptionType(Component.literal("'" + name + "' does not exist.")).create();
+        return property;
     }
 
     @Override
