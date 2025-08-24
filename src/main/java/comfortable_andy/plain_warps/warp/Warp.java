@@ -51,4 +51,8 @@ public interface Warp {
         return !list.contains(id());
     }
 
+    default List<WarpProperty<? extends Warp, ?, ?>> properties() {
+        return Collections.emptyList();
+    }
+
 }

@@ -6,6 +6,7 @@ import com.google.gson.Strictness;
 import com.google.gson.reflect.TypeToken;
 import com.google.gson.typeadapters.RuntimeTypeAdapterFactory;
 import com.mojang.brigadier.Command;
+import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import comfortable_andy.plain_warps.argument.WarpsArgumentType;
@@ -266,6 +267,76 @@ public final class PlainWarpsMain extends JavaPlugin {
             }
             return 1;
         };
+        final var editExecute = (Command<CommandSourceStack>) s -> {
+            Warp warp = s.getArgument("warp", Warp.class);
+            String name = s.getArgument("property", String.class);
+            var property = warp.properties()
+                    .stream()
+                    .filter(p -> p.name().equals(name))
+                    .findFirst().orElse(null);
+            if (property == null) {
+                throw new SimpleCommandExceptionType(Component.literal("Property does not exist")).create();
+            }
+            boolean hasValue = s.getNodes().stream()
+                    .anyMatch(n -> n.getNode().getName().equals("value"));
+            if (!hasValue) {
+                s.getSource().getSender()
+                        .sendMessage("Property '" + name + "' current set to: "
+                                + property.getGetter().apply(warp));
+                return 1;
+            }
+            StringReader reader = new StringReader(
+                    s.getArgument("value", String.class)
+            );
+            var value = property.getCommandArgConverter()
+                    .apply(s.getSource(), property.commandArgType().parse(reader));
+            if (reader.canRead()) {
+                throw new SimpleCommandExceptionType(
+                        Component.literal("Too many arguments at: '" + reader.getRemaining() + "'")
+                ).create();
+            }
+            property.getSetter().accept(warp, value);
+            s.getSource().getSender()
+                    .sendMessage("Property '" + name + "' now set to: " + value);
+            saveWarps();
+            return 1;
+        };
+        final var editRoot = Commands
+                .literal("edit")
+                .then(Commands
+                        .argument("warp", new WarpsArgumentType(this))
+                        .then(Commands
+                                .argument("property", StringArgumentType.string())
+                                .suggests((c, s) -> {
+                                    c.getArgument("warp", Warp.class)
+                                            .properties()
+                                            .forEach(p -> s.suggest(
+                                                    StringArgumentType
+                                                            .escapeIfRequired(p.name())
+                                            ));
+                                    return s.buildFuture();
+                                })
+                                .executes(editExecute)
+                                .then(Commands
+                                        .argument(
+                                                "value",
+                                                StringArgumentType.greedyString()
+                                        )
+                                        .suggests((c, s) -> {
+                                            Warp warp = c.getArgument("warp", Warp.class);
+                                            String name = c.getArgument("property", String.class);
+                                            var property = warp.properties()
+                                                    .stream()
+                                                    .filter(p -> p.name().equals(name))
+                                                    .findFirst().orElse(null);
+                                            return property == null
+                                                    ? s.buildFuture()
+                                                    : property.commandArgType().listSuggestions(c, s);
+                                        })
+                                        .executes(editExecute)
+                                )
+                        )
+                );
         final var adminRoot = Commands
                 .literal("warps")
                 .requires(s -> s.getSender().hasPermission("plain_warps.warps.edit"))
@@ -315,6 +386,7 @@ public final class PlainWarpsMain extends JavaPlugin {
                                 )
                         )
                 )
+                .then(editRoot)
                 .then(testSubCommand);
         commands.register(playerRoot.build());
         commands.register(adminRoot.build());
