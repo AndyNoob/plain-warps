@@ -4,7 +4,7 @@ import com.mojang.brigadier.arguments.ArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
+import com.mojang.brigadier.exceptions.DynamicCommandExceptionType;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import comfortable_andy.plain_warps.PlainWarpsMain;
@@ -23,13 +23,12 @@ import java.util.concurrent.CompletableFuture;
 public class WarpsArgumentType implements CustomArgumentType.Converted<Warp, String> {
 
     private final PlainWarpsMain main;
+    private static final DynamicCommandExceptionType WARP_NOT_FOUND = new DynamicCommandExceptionType(t -> Component.literal("Could not find warp '" + t + "'!"));
 
     @Override
     public @NotNull Warp convert(@NotNull String nativeType) throws CommandSyntaxException {
         Warp warp = main.getWarp(nativeType);
-        if (warp == null) {
-            throw new SimpleCommandExceptionType(Component.literal("Could not find warp!")).create();
-        }
+        if (warp == null) throw WARP_NOT_FOUND.create(nativeType);
         return warp;
     }
 
