@@ -44,6 +44,7 @@ public class WarpsArgumentType implements CustomArgumentType.Converted<Warp, Str
         for (Warp warp : main.getWarps()) {
             if (!canSeeAll && warp.isLockedFor(s.getSender()))
                 continue;
+            if (!warp.id().toLowerCase().startsWith(builder.getRemainingLowerCase())) continue;
             final Location loc = warp.getLocation();
             builder.suggest(StringArgumentType.escapeIfRequired(warp.id()), Component.literal("(")
                     .append(loc.getWorld().getName())

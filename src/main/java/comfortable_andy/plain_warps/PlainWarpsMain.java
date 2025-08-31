@@ -12,7 +12,8 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import comfortable_andy.plain_warps.argument.WarpsArgumentType;
 import comfortable_andy.plain_warps.listener.BonfireListener;
-import comfortable_andy.plain_warps.warp.BonfireWarp;
+import comfortable_andy.plain_warps.warp.bonfire.BonfireMapRenderer;
+import comfortable_andy.plain_warps.warp.bonfire.BonfireWarp;
 import comfortable_andy.plain_warps.warp.PlainWarp;
 import comfortable_andy.plain_warps.warp.Warp;
 import comfortable_andy.plain_warps.warp.WarpProperty;
@@ -35,29 +36,21 @@ import net.minecraft.world.phys.Vec2;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.block.data.type.Campfire;
 import org.bukkit.command.CommandSender;
-import org.bukkit.entity.BlockDisplay;
-import org.bukkit.entity.ItemDisplay;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.MapMeta;
+import org.bukkit.map.MapView;
 import org.bukkit.permissions.Permission;
 import org.bukkit.permissions.PermissionDefault;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.util.Transformation;
-import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
-import org.joml.Math;
-import org.joml.Quaternionf;
 import org.joml.Vector2f;
-import org.joml.Vector3f;
 
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
 import java.util.HashSet;
+import java.util.Scanner;
 import java.util.Set;
 
 @SuppressWarnings("UnstableApiUsage")
@@ -78,11 +71,15 @@ public final class PlainWarpsMain extends JavaPlugin {
     @Getter
     private final Set<Warp> warps = new HashSet<>();
     private File warpsFile;
+    private File mapIdFile;
+    private int mapId = -1033898294;
 
     @Override
     public void onEnable() {
         INST = this;
         warpsFile = new File(getDataFolder(), "warps.json");
+        mapIdFile = new File(getDataFolder(), "dont_touch_me");
+        loadMapId();
         saveResource(
                 getDataFolder().toPath().relativize(warpsFile.toPath()).toString(),
                 false
@@ -201,46 +198,8 @@ public final class PlainWarpsMain extends JavaPlugin {
                     if (!(c.getSource().getSender() instanceof Player player)) {
                         throw new SimpleCommandExceptionType(Component.literal("You need to be a player.")).create();
                     }
-                    Location location = player.getLocation()
-                            .toBlockLocation()
-                            .add(player.getFacing().getDirection().multiply(5))
-                            .setRotation(0, 0);
-                    BlockDisplay campfire = player.getWorld().spawn(location, BlockDisplay.class, b -> {
-                        Campfire data = (Campfire) Material.SOUL_CAMPFIRE.createBlockData();
-                        data.setLit(false);
-                        b.setBlock(data);
-                    });
-                    Vector directionOfSword = new Vector(0, 1, 0)
-                            .rotateAroundX(Math.toRadians(-15))
-                            .rotateAroundY(Math.toRadians(15));
-                    ItemDisplay sword = player.getWorld().spawn(location.clone().add(.5, 0.2, 0).add(directionOfSword), ItemDisplay.class, i -> {
-                        i.setItemStack(new ItemStack(Material.GOLDEN_SWORD));
-                        i.setTeleportDuration(18);
-                        Bukkit.getScheduler().runTaskLater(this, () ->
-                        {
-                            i.teleport(i.getLocation().subtract(directionOfSword.clone().multiply(0.75)));
-                            Bukkit.getScheduler().runTaskLater(this, () -> {
-                                Campfire fireData = (Campfire) campfire.getBlock();
-                                fireData.setLit(true);
-                                campfire.setBlock(fireData);
-                            }, i.getTeleportDuration());
-                        }, 8);
-                        i.setTransformation(new Transformation(
-                                new Vector3f(),
-                                new Quaternionf(),
-                                new Vector3f(1, 1, 1),
-                                new Quaternionf().rotateXYZ(
-                                        Math.toRadians(90),
-                                        Math.toRadians(0),
-                                        Math.toRadians(135)
-                                )
-                        ));
-                        i.teleport(i.getLocation().setDirection(directionOfSword));
-                    });
-                    Bukkit.getScheduler().runTaskLater(this, () -> {
-                        campfire.remove();
-                        sword.remove();
-                    }, 20 * 5);
+                    ItemStack stack = makeBonfireMap(player);
+                    player.getInventory().addItem(stack);
                     return 1;
                 });
 
@@ -384,6 +343,23 @@ public final class PlainWarpsMain extends JavaPlugin {
         Bukkit.getScheduler().runTaskTimerAsynchronously(this, this::saveWarps, 20 * 5, 20 * 60);
     }
 
+    private @NotNull ItemStack makeBonfireMap(Player player) {
+        ItemStack stack = new ItemStack(Material.FILLED_MAP);
+        stack.editMeta(MapMeta.class, m -> {
+            MapView view = mapId < 0 ? null : Bukkit.getMap(mapId);
+            if (view == null) {
+                view = Bukkit.createMap(player.getWorld());
+                mapId = view.getId();
+                saveMapId(mapId);
+            }
+            view.setScale(MapView.Scale.CLOSEST);
+            view.getRenderers().forEach(view::removeRenderer);
+            view.addRenderer(new BonfireMapRenderer());
+            m.setMapView(view);
+        });
+        return stack;
+    }
+
     private static @NotNull WarpProperty<?, ?, ?> getWarpProperty(Warp warp, String name) throws CommandSyntaxException {
         var property = warp.properties()
                 .stream()
@@ -414,6 +390,43 @@ public final class PlainWarpsMain extends JavaPlugin {
         loadDataFile();
         try (FileWriter writer = new FileWriter(warpsFile)) {
             writer.write(GSON.toJson(warps, TOKEN.getType()));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @SuppressWarnings("ResultOfMethodCallIgnored")
+    private void ensureMapIdFileExists() {
+        if (!mapIdFile.exists()) {
+            try {
+                mapIdFile.getParentFile().mkdirs();
+                if (!mapIdFile.createNewFile())
+                    throw new IllegalStateException("could not create map id file");
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    private void loadMapId() {
+        ensureMapIdFileExists();
+        try (Scanner scanner = new Scanner(mapIdFile)) {
+            String raw = scanner.hasNext() ? scanner.nextLine().trim() : "";
+            if (raw.isEmpty()) {
+                getLogger().warning("No map id loaded.");
+                return;
+            }
+            mapId = Integer.parseInt(raw);
+            getLogger().info("Loaded map id " + mapId);
+        } catch (FileNotFoundException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void saveMapId(int id) {
+        ensureMapIdFileExists();
+        try (FileWriter writer = new FileWriter(mapIdFile)) {
+            writer.write("" + id);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

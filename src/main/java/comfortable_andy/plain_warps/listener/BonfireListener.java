@@ -1,7 +1,7 @@
 package comfortable_andy.plain_warps.listener;
 
 import comfortable_andy.plain_warps.PlainWarpsMain;
-import comfortable_andy.plain_warps.warp.BonfireWarp;
+import comfortable_andy.plain_warps.warp.bonfire.BonfireWarp;
 import io.papermc.paper.event.player.PlayerTrackEntityEvent;
 import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Interaction;

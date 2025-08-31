@@ -1,4 +1,4 @@
-package comfortable_andy.plain_warps.warp;
+package comfortable_andy.plain_warps.warp.bonfire;
 
 import com.comphenix.protocol.PacketType;
 import com.comphenix.protocol.ProtocolLibrary;
@@ -8,6 +8,10 @@ import com.comphenix.protocol.events.PacketContainer;
 import com.comphenix.protocol.wrappers.WrappedBlockData;
 import com.comphenix.protocol.wrappers.WrappedDataWatcher;
 import comfortable_andy.plain_warps.PlainWarpsMain;
+import comfortable_andy.plain_warps.argument.BonfireGroupArgumentType;
+import comfortable_andy.plain_warps.warp.PlainWarp;
+import comfortable_andy.plain_warps.warp.Warp;
+import comfortable_andy.plain_warps.warp.WarpProperty;
 import lombok.Getter;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.util.Brightness;
@@ -35,6 +39,8 @@ import org.joml.Vector3f;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
@@ -42,6 +48,13 @@ import java.util.function.Function;
 
 public final class BonfireWarp extends PlainWarp {
 
+    private static final WarpProperty<BonfireWarp, String, String> GROUP = new WarpProperty<>(
+            "group",
+            (w, s) -> w.group = s,
+            w -> w.group,
+            new BonfireGroupArgumentType(),
+            (c, s) -> s
+    );
     private static final Integer BLOCK_STATE_ID;
     private static final Integer BRIGHTNESS_ID;
     private static final Integer SCALE_ID;
@@ -66,6 +79,7 @@ public final class BonfireWarp extends PlainWarp {
     public final Vector bonfirePosition;
     public final Vector swordDir;
     public final Vector swordOffset;
+    public String group = null;
     public @Nullable UUID campfireId = null;
     public @Nullable UUID swordDisplayId = null;
     public @Nullable UUID interactionId = null;
@@ -310,4 +324,10 @@ public final class BonfireWarp extends PlainWarp {
                 .orElse(null);
     }
 
+    @Override
+    public List<WarpProperty<? extends Warp, ?, ?>> properties() {
+        var list = new ArrayList<>(super.properties());
+        list.add(GROUP);
+        return list;
+    }
 }
