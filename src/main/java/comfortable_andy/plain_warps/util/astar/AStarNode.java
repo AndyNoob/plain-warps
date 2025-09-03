@@ -10,7 +10,10 @@ import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @RequiredArgsConstructor
@@ -26,7 +29,7 @@ public class AStarNode implements Comparable<AStarNode> {
         int c = Double.compare(fScore, o.fScore);
         if (c != 0) return c;
         // prefer larger g (deeper), this often helps as a heuristic tie-breaker (gpt-5)
-        return Double.compare(o.gScore, this.gScore);
+        return Double.compare(o.gScore, gScore);
     }
 
     /**
