@@ -36,6 +36,7 @@ import net.minecraft.world.phys.Vec2;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -49,9 +50,8 @@ import org.jetbrains.annotations.NotNull;
 import org.joml.Vector2f;
 
 import java.io.*;
-import java.util.HashSet;
-import java.util.Scanner;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 @SuppressWarnings("UnstableApiUsage")
 public final class PlainWarpsMain extends JavaPlugin {
@@ -72,19 +72,19 @@ public final class PlainWarpsMain extends JavaPlugin {
     private final Set<Warp> warps = new HashSet<>();
     private File warpsFile;
     private File mapIdFile;
-    private int mapId = -1033898294;
+    private Map<UUID, MapView> views;
 
     @Override
     public void onEnable() {
         INST = this;
         warpsFile = new File(getDataFolder(), "warps.json");
         mapIdFile = new File(getDataFolder(), "dont_touch_me");
-        loadMapId();
+        loadWarps();
+        loadMapIds();
         saveResource(
                 getDataFolder().toPath().relativize(warpsFile.toPath()).toString(),
                 false
         );
-        loadWarps();
         getLifecycleManager().registerEventHandler(
                 LifecycleEvents.COMMANDS,
                 this::registerCommands
@@ -93,6 +93,7 @@ public final class PlainWarpsMain extends JavaPlugin {
             @Override
             public void run() {
                 saveWarps();
+                saveMapIds();
                 for (Warp warp : warps) {
                     String perm = warp.getPerm();
                     if (getServer().getPluginManager().getPermission(perm) == null)
@@ -346,12 +347,10 @@ public final class PlainWarpsMain extends JavaPlugin {
     private @NotNull ItemStack makeBonfireMap(Player player) {
         ItemStack stack = new ItemStack(Material.FILLED_MAP);
         stack.editMeta(MapMeta.class, m -> {
-            MapView view = mapId < 0 ? null : Bukkit.getMap(mapId);
-            if (view == null) {
-                view = Bukkit.createMap(player.getWorld());
-                mapId = view.getId();
-                saveMapId(mapId);
-            }
+            MapView view = views.computeIfAbsent(
+                    player.getWorld().getUID(),
+                    u -> Bukkit.createMap(player.getWorld())
+            );
             view.setScale(MapView.Scale.CLOSEST);
             view.getRenderers().forEach(view::removeRenderer);
             view.addRenderer(new BonfireMapRenderer());
@@ -408,25 +407,47 @@ public final class PlainWarpsMain extends JavaPlugin {
         }
     }
 
-    private void loadMapId() {
+    private void loadMapIds() {
         ensureMapIdFileExists();
+        this.views = new ConcurrentHashMap<>();
         try (Scanner scanner = new Scanner(mapIdFile)) {
-            String raw = scanner.hasNext() ? scanner.nextLine().trim() : "";
-            if (raw.isEmpty()) {
-                getLogger().warning("No map id loaded.");
-                return;
+            while (scanner.hasNext()) {
+                String rawId = scanner.nextLine();
+                UUID id;
+                try {
+                    id = UUID.fromString(rawId);
+                } catch (Exception e) {
+                    getLogger().warning("Malformed world id '" + rawId + "', ignoring.");
+                    continue;
+                }
+                World world = Bukkit.getWorld(id);
+                if (!scanner.hasNext()) {
+                    getLogger().warning("World '" + (world == null ? id : world.getName()) + "' has missing map id entry.");
+                    break;
+                }
+                int mapId = Integer.parseInt(scanner.nextLine());
+                MapView view = Bukkit.getMap(mapId);
+                if (view == null) {
+                    getLogger().warning("World '" + (world == null ? id : world.getName()) + "' has a map id that couldn't be found.");
+                    continue;
+                }
+                view.getRenderers().forEach(view::removeRenderer);
+                view.addRenderer(new BonfireMapRenderer());
+                views.put(id, view);
             }
-            mapId = Integer.parseInt(raw);
-            getLogger().info("Loaded map id " + mapId);
+            getLogger().info("Loaded map ids for " + views.size() + " worlds.");
         } catch (FileNotFoundException e) {
             throw new RuntimeException(e);
         }
     }
 
-    private void saveMapId(int id) {
+    private void saveMapIds() {
         ensureMapIdFileExists();
-        try (FileWriter writer = new FileWriter(mapIdFile)) {
-            writer.write("" + id);
+        try (PrintWriter writer = new PrintWriter(mapIdFile)) {
+            for (Map.Entry<UUID, MapView> entry : views.entrySet()) {
+                writer.println(entry.getKey().toString());
+                writer.println(entry.getValue().getId());
+            }
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -442,7 +463,7 @@ public final class PlainWarpsMain extends JavaPlugin {
     public void loadDataFile() {
         if (!warpsFile.exists()) {
             try {
-                if (!(warpsFile.getParentFile().mkdirs() || warpsFile.createNewFile())) {
+                if (!((!warpsFile.getParentFile().exists() && warpsFile.getParentFile().mkdirs()) || warpsFile.createNewFile())) {
                     saveResource(
                             getDataFolder().toPath().relativize(warpsFile.toPath()).toString(),
                             false
