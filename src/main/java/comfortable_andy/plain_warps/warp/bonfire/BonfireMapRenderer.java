@@ -2,9 +2,11 @@ package comfortable_andy.plain_warps.warp.bonfire;
 
 import comfortable_andy.plain_warps.PlainWarpsMain;
 import comfortable_andy.plain_warps.util.astar.AStarPathFinder;
+import net.minecraft.util.Mth;
 import org.bukkit.Material;
 import org.bukkit.Particle;
 import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.map.*;
 import org.bukkit.util.BlockVector;
@@ -45,25 +47,73 @@ public class BonfireMapRenderer extends MapRenderer {
             canvas.drawText(10, 10, MinecraftFont.Font, "No warps found under group '" + group + "'");
             return;
         }
-        Vector center = warps.stream()
-                .map(b -> b.bonfirePosition)
-                .reduce(new Vector(), Vector::add, Vector::add)
-                .multiply(1d / warps.size());
+        Vector center = getCenter(warps);
+        double maxDistance = warps.stream()
+                .mapToDouble(w -> w.bonfirePosition.distance(center)).max().orElse(0) * 2.5;
+        double pixelsPerBlock = 128d / maxDistance;
+        Vector topLeft = center.clone()
+                .subtract(new Vector(maxDistance / 2d, 0, maxDistance / 2d));
 
-        int maxDistance = warps.stream()
-                .mapToInt(w -> Math.max(
-                        Math.abs(w.bonfirePosition.getBlockX() - center.getBlockX()),
-                        Math.abs(w.bonfirePosition.getBlockZ() - center.getBlockZ())
-                )).max().orElse(0) + 10;
+        {
+            if (pixelsPerBlock < 1) {
+                double blocksPerPixel = 1 / pixelsPerBlock;
+                double remainder = blocksPerPixel - ((int) blocksPerPixel);
+                pixelsPerBlock = (pixelsPerBlock - pixelsPerBlock * remainder);
+            } else {
+                pixelsPerBlock = Math.round(pixelsPerBlock);
+            }
+
+            double blocksPerPixel = 1 / pixelsPerBlock;
+
+            for (int x = 0; x < 128; x++) {
+                for (int y = 0; y < 128; y++) {
+                    if (pixelsPerBlock < 1) {
+                        double rgbAccum = 0;
+                        for (int i = 0; i < blocksPerPixel; i++) {
+                            for (int j = 0; j < blocksPerPixel; j++) {
+                                Block block = world.getHighestBlockAt(
+                                        (int) (x * blocksPerPixel + i + topLeft.getBlockX()),
+                                        (int) (y * blocksPerPixel + i + topLeft.getBlockZ())
+                                );
+                                if (samplePaths.containsKey(group) && samplePaths.get(group).stream().noneMatch(b -> b.distanceSquared(block.getLocation().toVector()) < 9))
+                                    continue;
+                                rgbAccum += getMapColor(block).getRGB();
+                            }
+                        }
+                        rgbAccum /= blocksPerPixel * blocksPerPixel;
+                        canvas.setPixelColor(x, y, new Color((int) rgbAccum));
+                    } else {
+                        Block block = world.getHighestBlockAt(
+                                (int) /*Math.round*/(x * blocksPerPixel + topLeft.getBlockX()),
+                                (int) /*Math.round*/(y * blocksPerPixel + topLeft.getBlockZ())
+                        );
+                        if (samplePaths.containsKey(group) && samplePaths.get(group).stream().noneMatch(b -> b.distanceSquared(block.getLocation().toVector()) < 9))
+                            continue;
+                        var color = getMapColor(block);
+                        if (!block.isEmpty()) {
+                            for (int i = 0; i < pixelsPerBlock; i++) {
+                                for (int j = 0; j < pixelsPerBlock; j++) {
+                                    canvas.setPixelColor(x + i, y + j, color);
+                                }
+                            }
+                        }
+                        y += (int) (pixelsPerBlock - 1);
+                    }
+                }
+                if (pixelsPerBlock > 1) x += (int) (pixelsPerBlock - 1);
+            }
+        }
+
         map.setCenterX(center.getBlockX());
         map.setCenterZ(center.getBlockZ());
+        center.toLocation(world).getBlock().setType(Material.DIAMOND_BLOCK);
+        topLeft.toLocation(world).getBlock().setType(Material.REDSTONE_BLOCK);
+        new Vector(maxDistance, 0, 0).add(topLeft).toLocation(world).getBlock().setType(Material.EMERALD_BLOCK);
+        new Vector(0, 0, maxDistance).add(topLeft).toLocation(world).getBlock().setType(Material.IRON_BLOCK);
+        new Vector(maxDistance, 0, maxDistance).add(topLeft).toLocation(world).getBlock().setType(Material.AMETHYST_BLOCK);
 
-        double blockPerPixel = (maxDistance * 2d / 128);
         canvas.drawText(10, 10, MinecraftFont.Font, "dist " + maxDistance);
-        canvas.drawText(10, 20, MinecraftFont.Font, "per pixel " + blockPerPixel);
-
-        double scale = 1d / blockPerPixel * 2;
-        canvas.drawText(10, 30, MinecraftFont.Font, "scale " + scale);
+        canvas.drawText(10, 20, MinecraftFont.Font, "pixel/blk " + pixelsPerBlock);
 
         {
             if (warps.size() >= 2 && !samplePaths.containsKey(group)) {
@@ -90,32 +140,33 @@ public class BonfireMapRenderer extends MapRenderer {
                             null,
                             true
                     );
-                    Vector offset = vector.clone().subtract(center);
 
                 }
-                canvas.drawText(10, 40, MinecraftFont.Font, "path size " + vectors.size());
+                canvas.drawText(10, 30, MinecraftFont.Font,
+                        "path size " + vectors.size()
+                );
             }
         }
 
         {
             MapCursorCollection cursors = new MapCursorCollection();
             for (BonfireWarp warp : warps) {
-                Vector toWarp = warp.bonfirePosition.clone().subtract(center);
-                toWarp.multiply(scale);
+                Vector toWarp = warp.bonfirePosition.clone().subtract(center).add(new Vector(1, 0, 1));
+                toWarp.multiply(pixelsPerBlock * 2);
                 cursors.addCursor(new MapCursor(
-                        (byte) (toWarp.getBlockX()),
-                        (byte) (toWarp.getBlockZ()),
+                        (byte) Mth.clamp(toWarp.getX(), -128, 127),
+                        (byte) Mth.clamp(toWarp.getZ(), -128, 127),
                         (byte) 8,
                         MapCursor.Type.PLAYER_OFF_LIMITS,
                         true,
                         warp.id()
                 ));
             }
-            Vector toPlayer = player.getLocation().toVector().subtract(center);
-            toPlayer.multiply(scale);
+            Vector toPlayer = player.getLocation().add(0.5, 0, 0.5).toVector().subtract(center);
+            toPlayer.multiply(pixelsPerBlock * 2);
             cursors.addCursor(new MapCursor(
-                    (byte) (toPlayer.getBlockX()),
-                    (byte) (toPlayer.getBlockZ()),
+                    (byte) Mth.clamp(toPlayer.getX(), -128, 127),
+                    (byte) Mth.clamp(toPlayer.getZ(), -128, 127),
                     (byte) (Math.round((player.getYaw() / 360) * 16) & 15),
                     MapCursor.Type.PLAYER,
                     true
@@ -124,8 +175,30 @@ public class BonfireMapRenderer extends MapRenderer {
         }
     }
 
+    private static @NotNull Vector getCenter(List<BonfireWarp> warps) {
+        Vector center;
+        {
+            Vector min = new Vector(Double.POSITIVE_INFINITY, 0, Double.POSITIVE_INFINITY);
+            Vector max = new Vector(Double.NEGATIVE_INFINITY, 0, Double.NEGATIVE_INFINITY);
+            for (BonfireWarp b : warps) {
+                Vector p = b.bonfirePosition;
+                min.setX(Math.min(min.getX(), p.getX()));
+                min.setZ(Math.min(min.getZ(), p.getZ()));
+                max.setX(Math.max(max.getX(), p.getX()));
+                max.setZ(Math.max(max.getZ(), p.getZ()));
+            }
+            center = new Vector((min.getX() + max.getX()) * 0.5, 0, (min.getZ() + max.getZ()) * 0.5);
+        }
+        return center;
+    }
+
+    private static @NotNull Color getMapColor(Block block) {
+        return new Color(block.getBlockData().getMapColor().asRGB());
+    }
+
     static BlockVector groundVector(World world, BlockVector vec) {
-        if (vec.toLocation(world).getBlock().getRelative(0, -1, 0).isSolid()) return vec;
+        if (vec.toLocation(world).getBlock().getRelative(0, -1, 0).isSolid())
+            return vec;
         return vec.clone().add(new Vector(0, -1, 0)).toBlockVector();
     }
 }
