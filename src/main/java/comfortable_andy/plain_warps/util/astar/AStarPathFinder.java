@@ -47,7 +47,10 @@ public class AStarPathFinder {
             gScores.put(start, 0d);
         }
         AStarNode current;
+        double maxIterations = 300;
+        int i = 0;
         while (!open.isEmpty()) {
+            if (i++ > maxIterations) break;
             current = open.poll();
             if (current.gScore
                     != gScores.getOrDefault(current.pos, Double.POSITIVE_INFINITY))
