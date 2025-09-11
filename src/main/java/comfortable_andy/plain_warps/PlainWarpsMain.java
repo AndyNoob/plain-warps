@@ -10,13 +10,14 @@ import com.mojang.brigadier.StringReader;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
+import comfortable_andy.plain_warps.argument.BonfireGroupArgumentType;
 import comfortable_andy.plain_warps.argument.WarpsArgumentType;
 import comfortable_andy.plain_warps.listener.BonfireListener;
-import comfortable_andy.plain_warps.warp.bonfire.BonfireMapRenderer;
-import comfortable_andy.plain_warps.warp.bonfire.BonfireWarp;
 import comfortable_andy.plain_warps.warp.PlainWarp;
 import comfortable_andy.plain_warps.warp.Warp;
 import comfortable_andy.plain_warps.warp.WarpProperty;
+import comfortable_andy.plain_warps.warp.bonfire.BonfireMapRenderer;
+import comfortable_andy.plain_warps.warp.bonfire.BonfireWarp;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.command.brigadier.PaperCommandSourceStack;
@@ -44,6 +45,7 @@ import org.bukkit.inventory.meta.MapMeta;
 import org.bukkit.map.MapView;
 import org.bukkit.permissions.Permission;
 import org.bukkit.permissions.PermissionDefault;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 import org.jetbrains.annotations.NotNull;
@@ -337,6 +339,20 @@ public final class PlainWarpsMain extends JavaPlugin {
                                 )
                         )
                 )
+                .then(Commands.literal("viewGroup").then(Commands.argument("viewGroup", new BonfireGroupArgumentType())
+                        .executes(c -> {
+                            if (!(c.getSource().getSender() instanceof Player player)) {
+                                c.getSource().getSender().sendMessage("You need to be a player.");
+                                return 0;
+                            }
+                            String group = c.getArgument("viewGroup", String.class);
+                            if (group == null) {
+                                player.getPersistentDataContainer().remove(BonfireMapRenderer.GROUP);
+                            } else {
+                                player.getPersistentDataContainer().set(BonfireMapRenderer.GROUP, PersistentDataType.STRING, group);
+                            }
+                            return 1;
+                        })))
                 .then(editRoot)
                 .then(testSubCommand);
         commands.register(playerRoot.build());

@@ -30,6 +30,7 @@ public class BonfireGroupArgumentType implements CustomArgumentType.Converted<St
                 .filter(s -> s instanceof BonfireWarp warp && warp.group != null && warp.group.startsWith(builder.getRemainingLowerCase()))
                 .map(s -> ((BonfireWarp) s).group)
                 .forEach(builder::suggest);
+        builder.suggest("default");
         return builder.buildFuture();
     }
 }
