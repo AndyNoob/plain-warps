@@ -57,7 +57,7 @@ public class BonfireMapRenderer extends MapRenderer {
             double blocksPerPixel = Math.ceil(1 / pixelsPerBlock);
             pixelsPerBlock = 1 / blocksPerPixel;
         } else {
-            pixelsPerBlock = Math.round(pixelsPerBlock);
+            pixelsPerBlock = Math.ceil(pixelsPerBlock);
         }
 
         double blocksPerPixel = 1 / pixelsPerBlock;
@@ -118,45 +118,12 @@ public class BonfireMapRenderer extends MapRenderer {
             new Vector(maxDistance, 0, maxDistance).add(topLeft).toLocation(world).getBlock().setType(Material.AMETHYST_BLOCK);
         }
 
-        {
-            if (warps.size() >= 2 && !COMPUTED_PATHS.containsKey(group)) {
-                Set<BlockVector> locs = new HashSet<>();
-                for (int i = 0; i < warps.size(); i++) {
-                    BonfireWarp warpA = warps.get(i);
-                    BonfireWarp warpB = warps.get((i + 1) % warps.size());
-                    List<BlockVector> path = new AStarPathFinder()
-                            .findPath(
-                                    world,
-                                    groundVector(world, warpA.bonfirePosition.toBlockVector()),
-                                    groundVector(world, warpB.bonfirePosition.toBlockVector())
-                            );
-                    if (path == null) continue;
-                    locs.addAll(path);
-                }
-                COMPUTED_PATHS.put(group, locs);
-            } else if (COMPUTED_PATHS.containsKey(group)) {
-                Collection<BlockVector> vectors = COMPUTED_PATHS.get(group);
-                for (BlockVector vector : vectors) {
-                    world.spawnParticle(
-                            Particle.FLAME,
-                            vector.toLocation(world).add(0.5, 1, 0.5),
-                            1,
-                            0,
-                            0,
-                            0,
-                            0,
-                            null,
-                            true
-                    );
-
-                }
-            }
-        }
+        updatePaths(warps, group, world);
 
         {
             MapCursorCollection cursors = new MapCursorCollection();
             for (BonfireWarp warp : warps) {
-                Vector toWarp = warp.bonfirePosition.clone().subtract(center);
+                Vector toWarp = warp.bonfirePosition.clone().subtract(center).add(new Vector(0.5, 0, 0.5));
                 toWarp.multiply(pixelsPerBlock * 2);
                 cursors.addCursor(new MapCursor(
                         (byte) Mth.clamp(toWarp.getX() + pixelsPerBlock, -128, 127),
@@ -177,6 +144,41 @@ public class BonfireMapRenderer extends MapRenderer {
                     true
             ));
             canvas.setCursors(cursors);
+        }
+    }
+
+    private static void updatePaths(List<BonfireWarp> warps, String group, World world) {
+        if (warps.size() >= 2 && !COMPUTED_PATHS.containsKey(group)) {
+            Set<BlockVector> locs = new HashSet<>();
+            for (int i = 0; i < warps.size(); i++) {
+                BonfireWarp warpA = warps.get(i);
+                BonfireWarp warpB = warps.get((i + 1) % warps.size());
+                List<BlockVector> path = new AStarPathFinder()
+                        .findPath(
+                                world,
+                                groundVector(world, warpA.bonfirePosition.toBlockVector()),
+                                groundVector(world, warpB.bonfirePosition.toBlockVector())
+                        );
+                if (path == null) continue;
+                locs.addAll(path);
+            }
+            COMPUTED_PATHS.put(group, locs);
+        } else if (COMPUTED_PATHS.containsKey(group)) {
+            Collection<BlockVector> vectors = COMPUTED_PATHS.get(group);
+            for (BlockVector vector : vectors) {
+                world.spawnParticle(
+                        Particle.FLAME,
+                        vector.toLocation(world).add(0.5, 1, 0.5),
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        null,
+                        true
+                );
+
+            }
         }
     }
 
