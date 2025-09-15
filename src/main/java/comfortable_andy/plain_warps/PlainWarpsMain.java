@@ -42,6 +42,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.MapMeta;
+import org.bukkit.map.MapRenderer;
 import org.bukkit.map.MapView;
 import org.bukkit.permissions.Permission;
 import org.bukkit.permissions.PermissionDefault;
@@ -346,7 +347,7 @@ public final class PlainWarpsMain extends JavaPlugin {
                                 return 0;
                             }
                             String group = c.getArgument("viewGroup", String.class);
-                            if (group == null) {
+                            if (group.equalsIgnoreCase("default")) {
                                 player.getPersistentDataContainer().remove(BonfireMapRenderer.GROUP);
                             } else {
                                 player.getPersistentDataContainer().set(BonfireMapRenderer.GROUP, PersistentDataType.STRING, group);
@@ -367,9 +368,6 @@ public final class PlainWarpsMain extends JavaPlugin {
                     player.getWorld().getUID(),
                     u -> Bukkit.createMap(player.getWorld())
             );
-            view.setScale(MapView.Scale.CLOSEST);
-            view.getRenderers().forEach(view::removeRenderer);
-            view.addRenderer(new BonfireMapRenderer());
             m.setMapView(view);
         });
         return stack;
@@ -388,6 +386,12 @@ public final class PlainWarpsMain extends JavaPlugin {
     @Override
     public void onDisable() {
         saveWarps();
+        for (MapView view : views.values()) {
+            for (MapRenderer r : view.getRenderers()) {
+                if (r instanceof BonfireMapRenderer renderer)
+                    renderer.computeService.shutdown();
+            }
+        }
     }
 
     public void loadWarps() {
@@ -448,7 +452,7 @@ public final class PlainWarpsMain extends JavaPlugin {
                     continue;
                 }
                 view.getRenderers().forEach(view::removeRenderer);
-                view.addRenderer(new BonfireMapRenderer());
+                view.addRenderer(new BonfireMapRenderer(world));
                 views.put(id, view);
             }
             getLogger().info("Loaded map ids for " + views.size() + " worlds.");
