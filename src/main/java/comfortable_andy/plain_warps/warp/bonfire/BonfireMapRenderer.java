@@ -2,6 +2,7 @@ package comfortable_andy.plain_warps.warp.bonfire;
 
 import comfortable_andy.plain_warps.PlainWarpsMain;
 import comfortable_andy.plain_warps.util.astar.AStarPathFinder;
+import lombok.ToString;
 import net.kyori.adventure.text.Component;
 import net.minecraft.util.Mth;
 import org.bukkit.Bukkit;
@@ -12,6 +13,9 @@ import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.map.*;
 import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.scoreboard.Criteria;
+import org.bukkit.scoreboard.DisplaySlot;
+import org.bukkit.scoreboard.Objective;
 import org.bukkit.util.BlockVector;
 import org.bukkit.util.Vector;
 import org.jetbrains.annotations.NotNull;
@@ -52,27 +56,47 @@ public class BonfireMapRenderer extends MapRenderer {
         updatePaths(warps, group, world);
         if (warps.isEmpty()) return;
 
-        RenderState state = states.computeIfAbsent(new RenderKey(group), k -> new RenderState(k.group, world));
-
-        if (state.lastRendered != null) {
-            paintBuffer(canvas, player, state, warps);
+        RenderKey key = new RenderKey(group);
+        RenderState state = states.computeIfAbsent(key, k -> new RenderState(k.group, world));
+        updateDebugBoard(player, state);
+        if (state.lastRendered != null && state.buffer != null) {
+            paintCanvas(canvas, player, state, warps);
         }
         Vector center = getCenter(warps);
         RenderRequest req = new RenderRequest(center, getPixelsPerBlock(warps, center));
         if (req.pixelsPerBlock < 1) canvas.drawText(5, 5, MinecraftFont.Font, "Down-sampling");
         else canvas.drawText(5, 5, MinecraftFont.Font, "Up-scaling");
-        if (state.queued) canvas.drawText(5, 15, MinecraftFont.Font, "Queuing");
-        if (world.getFullTime() % 20 != 0 && req.equals(state.lastRendered)) {
+        if (req.equals(state.lastRendered)) {
             canvas.drawText(5, 15, MinecraftFont.Font, "Not rendering");
             return;
         }
-
         state.latest = req;
         if (state.queued) return;
-        player.sendActionBar(Component.text("New render!"));
         state.queued = true;
         state.tail = state.tail.thenCompose(v -> drain(state))
                 .whenComplete((v, e) -> state.queued = false);
+    }
+
+    private static void updateDebugBoard(@NotNull Player player, RenderState state) {
+        Objective objective = player.getScoreboard().getObjective(DisplaySlot.SIDEBAR);
+        if (objective == null) {
+            objective = player.getScoreboard().registerNewObjective(
+                    "bonfireRender",
+                    Criteria.DUMMY,
+                    Component.text("Bonfire Render Debug")
+            );
+            objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+        }
+        for (String entry : player.getScoreboard().getEntries()) {
+            player.getScoreboard().resetScores(entry);
+        }
+        String fullString = state.toString();
+        String[] split = fullString.substring(31, fullString.length() - 2).replace("RenderRequest", "").split(", ");
+        int i = split.length;
+        for (String s : split) {
+            objective.getScore(s).setScore(i--);
+        }
+        objective.getScore("buffer=" + (state.buffer == null ? "null" : "rendered")).setScore(i);
     }
 
     private CompletableFuture<Void> drain(RenderState state) { // (gpt-5)
@@ -80,29 +104,27 @@ public class BonfireMapRenderer extends MapRenderer {
         RenderRequest next = state.latest;
         if (next == null) return CompletableFuture.completedFuture(null);
         state.latest = null; // claim it
-
         return buildRendering(state, next).thenCompose(v -> drain(state));
     }
 
     private CompletableFuture<Void> buildRendering(RenderState state, RenderRequest latest) {
         return CompletableFuture
                 .runAsync(() -> updateChunks(state, latest), MAIN_THREAD)
-                .thenApplyAsync(a -> renderPixels(state, latest), computeService)
-                .completeOnTimeout(null, 1500, TimeUnit.MILLISECONDS)
+                .thenApplyAsync(a -> renderToBuffer(state, latest), computeService)
+                .orTimeout(1500, TimeUnit.MILLISECONDS)
                 .thenAcceptAsync(buf -> {
+                    PlainWarpsMain.getInstance().getLogger().info("new render for " + state.group);
                     state.buffer = buf;
-                    state.dirty = true;
                     state.lastRendered = latest;
                 }, MAIN_THREAD);
     }
 
-    private static void paintBuffer(@NotNull MapCanvas canvas, @NotNull Player player, RenderState state, List<BonfireWarp> warps) {
-        if (state.dirty && state.buffer != null) {
-            state.dirty = false;
+    @SuppressWarnings("deprecation")
+    private static void paintCanvas(@NotNull MapCanvas canvas, @NotNull Player player, RenderState state, List<BonfireWarp> warps) {
+        if (state.buffer != null) {
             for (int x = 0; x < 128; x++) {
                 for (int y = 0; y < 128; y++) {
-                    int rgb = state.buffer[x + y * 128];
-                    canvas.setPixelColor(x, y, new Color(rgb));
+                    canvas.setPixel(x, y, state.buffer[x + y * 128]);
                 }
             }
         }
@@ -146,46 +168,38 @@ public class BonfireMapRenderer extends MapRenderer {
         return pixelsPerBlock;
     }
 
-    private static int[] renderPixels(RenderState state, RenderRequest request) {
+    private static byte[] renderToBuffer(RenderState state, RenderRequest request) {
         double blocksPerPixel = 1 / request.pixelsPerBlock;
         boolean downSampling = request.pixelsPerBlock < 1;
         int roundedBpp = downSampling ? (int) Math.round(blocksPerPixel) : 1;
         int roundedPpb = downSampling ? 1 : (int) Math.round(request.pixelsPerBlock);
         double centerX = request.center.getX();
         double centerZ = request.center.getZ();
-        int[] buffer = new int[128 * 128];
+        byte[] buffer = new byte[128 * 128];
         for (int x = 0; x < 128; x++) {
             for (int y = 0; y < 128; y++) {
                 if (downSampling) {
-                    int r = 0;
-                    int g = 0;
-                    int b = 0;
+                    int accum = 0;
                     int n = 0;
                     for (int i = 0; i < roundedBpp; i++) {
                         for (int j = 0; j < roundedBpp; j++) {
                             int bx = (int) Math.floor(((x - 64) * blocksPerPixel + i) + centerX);
                             int bz = (int) Math.floor(((y - 64) * blocksPerPixel + j) + centerZ);
-                            int argb = grabColor(state, bx, bz);
-                            if (argb == 0) continue;
-
-                            r += (argb >> 16) & 255;
-                            g += (argb >> 8) & 255;
-                            b += argb & 255;
+                            accum += grabColor(state, bx, bz);
                             n++;
                         }
                     }
                     if (n > 0) {
-                        int c = 0xFF000000 | ((r/n) << 16) | ((g/n) << 8) | (b/n);
-                        buffer[y * 128 + x] = c;
+                        buffer[y * 128 + x] = (byte) (accum / n);
                     }
                 } else {
                     int bx = (int) Math.floor(((x - 64) * blocksPerPixel) + centerX);
                     int bz = (int) Math.floor(((y - 64) * blocksPerPixel) + centerZ);
-                    int rgb = grabColor(state, bx, bz);
-                    if (rgb != 0) {
+                    byte color = grabColor(state, bx, bz);
+                    if (color != 0) {
                         for (int i = 0; i < roundedPpb && /* don't go past the canvas edge (gpt-5)*/ x + i < 128; i++) {
                             for (int j = 0; j < roundedPpb && y + j < 128; j++) {
-                                buffer[(y + j) * 128 + (x + i)] = rgb;
+                                buffer[(y + j) * 128 + (x + i)] = color;
                             }
                         }
                     }
@@ -206,18 +220,18 @@ public class BonfireMapRenderer extends MapRenderer {
         int minZ = (int) (req.center.getZ() - width / 2d);
         int maxX = minX + width;
         int maxZ = minZ + width;
-        for (int x = (minX & ~15); x < maxX; x += 16) { // & ~15 to round down to nearest multiple of 16
+        for (int x = (minX & ~15); x < maxX; x += 16) { // & ~15 to round down to nearest multiple of 16 (gpt-5)
             for (int z = (minZ & ~15); z < maxZ; z += 16) {
                 int cx = (x >> 4);
                 int cz = (z >> 4);
-                int[] colors = updateChunk(state, world, cx, cz, vectors);
+                byte[] colors = updateChunk(state, world, cx, cz, vectors);
                 if (colors == null) continue;
                 state.putChunk(cx, cz, colors);
             }
         }
     }
 
-    private static int @Nullable [] updateChunk(RenderState state, World world, int cx, int cz, Collection<BlockVector> vectors) {
+    private static byte @Nullable [] updateChunk(RenderState state, World world, int cx, int cz, Collection<BlockVector> vectors) {
         int chunkMinX = cx << 4;
         int chunkMinZ = cz << 4;
         int chunkMaxX = chunkMinX + 16;
@@ -230,7 +244,7 @@ public class BonfireMapRenderer extends MapRenderer {
             }
         }
         if (list.isEmpty()) return null;
-        int[] chunkCol = new int[16 * 16];
+        byte[] chunkCol = new byte[16 * 16];
         BlockVector cur = new BlockVector(0, 0, 0);
         for (int xx = 0; xx < 16; xx++) {
             cur.setX(chunkMinX + xx);
@@ -243,15 +257,15 @@ public class BonfireMapRenderer extends MapRenderer {
                     cur.setY(vector.getBlockY());
                     Block block = findBlock(state.group, world, cur);
                     if (block == null) continue;
-                    chunkCol[(zz << 4) | xx] = getMapColor(block).getRGB();
+                    chunkCol[(zz << 4) | xx] = getMapColor(block);
                 }
             }
         }
         return chunkCol;
     }
 
-    static int grabColor(RenderState state, int x, int z) {
-        int[] cols = state.grabChunk(x >> 4, z >> 4);
+    static byte grabColor(RenderState state, int x, int z) {
+        byte[] cols = state.grabChunk(x >> 4, z >> 4);
         if (cols == null) return 0;
         return cols[((z & 15) << 4) | (x & 15)];
     }
@@ -335,8 +349,9 @@ public class BonfireMapRenderer extends MapRenderer {
         return center;
     }
 
-    static @NotNull Color getMapColor(Block block) {
-        return new Color(block.getBlockData().getMapColor().asRGB());
+    @SuppressWarnings("removal")
+    static byte getMapColor(Block block) {
+        return MapPalette.matchColor(new Color(block.getBlockData().getMapColor().asRGB()));
     }
 
     static BlockVector groundVector(World world, BlockVector vec) {
@@ -349,20 +364,20 @@ public class BonfireMapRenderer extends MapRenderer {
 
     record RenderKey(String group) {}
 
+    @ToString
     static class RenderState {
         final String group;
+        @ToString.Exclude
         final World world;
         volatile boolean queued = false;
-        volatile int[] buffer;
-        volatile boolean dirty = false;
+        @ToString.Exclude
+        private volatile byte[] buffer;
         volatile RenderRequest latest;
+        @ToString.Include(name = "last")
         volatile RenderRequest lastRendered;
-        Map<Long, int[]> chunks = Collections.synchronizedMap(new LinkedHashMap<>(256, 0.75f, true) {
-            @Override
-            protected boolean removeEldestEntry(Map.Entry<Long, int[]> e) {
-                return size() > 512;
-            }
-        }); // use lru (gpt-5)
+        @ToString.Exclude
+        Map<Long, byte[]> chunks = new ConcurrentHashMap<>();
+        @ToString.Exclude
         CompletableFuture<Void> tail = CompletableFuture.completedFuture(null);
 
         RenderState(String group, World world) {
@@ -370,32 +385,14 @@ public class BonfireMapRenderer extends MapRenderer {
             this.world = world;
         }
 
-        void putChunk(int cx, int cz, int[] colors) {
+        void putChunk(int cx, int cz, byte[] colors) {
             long key = getKey(cx, cz);
             chunks.put(key, colors);
         }
 
-        int[] grabChunk(int cx, int cz) {
+        byte @Nullable [] grabChunk(int cx, int cz) {
             long key = getKey(cx, cz);
-            return chunks.computeIfAbsent(key, k -> {
-                var path = COMPUTED_PATHS.getOrDefault(
-                        new PathKey(world.getUID(), group),
-                        List.of()
-                );
-                try {
-                    return CompletableFuture.supplyAsync(() -> updateChunk(
-                            this,
-                            world,
-                            cx,
-                            cz,
-                            path
-                    ), MAIN_THREAD).get(50, TimeUnit.MILLISECONDS);
-                } catch (InterruptedException | ExecutionException e) {
-                    throw new RuntimeException(e);
-                } catch (TimeoutException e) {
-                    return new int[16 * 16];
-                }
-            });
+            return chunks.get(key);
         }
 
         private static long getKey(long cx, int cz) {
