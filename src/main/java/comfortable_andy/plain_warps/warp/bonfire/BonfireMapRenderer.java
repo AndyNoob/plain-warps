@@ -2,6 +2,7 @@ package comfortable_andy.plain_warps.warp.bonfire;
 
 import comfortable_andy.plain_warps.PlainWarpsMain;
 import comfortable_andy.plain_warps.util.astar.AStarPathFinder;
+import io.papermc.paper.scoreboard.numbers.NumberFormat;
 import lombok.ToString;
 import net.kyori.adventure.text.Component;
 import net.minecraft.util.Mth;
@@ -86,6 +87,7 @@ public class BonfireMapRenderer extends MapRenderer {
                     Component.text("Bonfire Render Debug")
             );
             objective.setDisplaySlot(DisplaySlot.SIDEBAR);
+            objective.numberFormat(NumberFormat.blank());
         }
         for (String entry : player.getScoreboard().getEntries()) {
             player.getScoreboard().resetScores(entry);
@@ -351,7 +353,8 @@ public class BonfireMapRenderer extends MapRenderer {
 
     @SuppressWarnings("removal")
     static byte getMapColor(Block block) {
-        return MapPalette.matchColor(new Color(block.getBlockData().getMapColor().asRGB()));
+        int rgb = block.getBlockData().getMapColor().asRGB();
+        return rgb == 0 ? 0 : MapPalette.matchColor(new Color(rgb));
     }
 
     static BlockVector groundVector(World world, BlockVector vec) {
